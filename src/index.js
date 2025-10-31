@@ -6,6 +6,7 @@ import cors from "cors";
 import admin from "firebase-admin";
 import { google } from "googleapis";
 import {dirname, join} from "path";
+import { Readable } from "stream";
 import fs from "fs";
 
 
@@ -30,8 +31,8 @@ const auth = new google.auth.GoogleAuth({
   keyFile: "drive-service-account.json",
   scopes: ["https://www.googleapis.com/auth/drive"],
 });
-
-const drive = google.drive({version: "v3", auth});
+const authClient = await auth.getClient();
+const drive = google.drive({version: "v3", auth:authClient});
 
 // ✅ Multer setup for file upload
 const upload = multer({
@@ -68,32 +69,39 @@ async function verifyFirebaseToken(req, res, next) {
   }
 }
 
-// ✅ Function: Create folder dynamically
-async function createFolder(folderName, parentFolderId) {
-  const fileMetadata = {
-    name: folderName,
-    mimeType: "application/vnd.google-apps.folder",
-    parents: [parentFolderId],
-  };
-  const res = await drive.files.create({
-    resource: fileMetadata,
-    fields: "id, name",
-  });
-  return res.data.id;
-}
+// // ✅ Function: Create folder dynamically
+// async function createFolder(folderName, parentFolderId) {
+//   const fileMetadata = {
+//     name: folderName,
+//     mimeType: "application/vnd.google-apps.folder",
+//     parents: [parentFolderId],
+//   };
+//   const res = await drive.files.create({
+//     resource: fileMetadata,
+//     fields: "id, name",
+
+//     supportsAllDrives:true,
+//   });
+//   return res.data.id;
+// }
 
 // ✅ Function: Upload file to Google Drive
-async function uploadFileToDrive(file, folderId) {
-  const res = await drive.files.create({
+async function uploadFileToDrive(file) {
+    const bufferStream = new Readable();
+  bufferStream.push(file.buffer);
+  bufferStream.push(null); // End the stream
+
+  const res = drive.files.create({
     requestBody: {
       name: file.originalname,
-      parents: [folderId],
+      parents: ["1F-keYuGsk7VLVW_nwC4CvJpb2enkWTTD"],
     },
     media: {
       mimeType: file.mimetype,
-      body: Buffer.from(file.buffer),
+      body: bufferStream,
     },
     fields: "id, name, webViewLink",
+    supportsAllDrives: true,
   });
   return res.data;
 }
@@ -106,11 +114,14 @@ app.post("/upload", verifyFirebaseToken, upload.single("file"), async (req, res)
 
     if (!file) return res.status(400).send("No file uploaded");
 
-    // 🔹 Create folder per course if not exists
-    const folderId = await createFolder(courseCode, process.env.DRIVE_PARENT_FOLDER_ID);
+    // 🔹 Extract department prefix (first 3 letters of course code)
+    const department = courseCode.substring(0, 3).toUpperCase();
+
+    // // 🔹 Create folder per course if not exists
+    // const folderId = await createFolder(department, process.env.DRIVE_PARENT_FOLDER_ID);
 
     // 🔹 Upload file
-    const uploadedFile = await uploadFileToDrive(file, folderId);
+    const uploadedFile = await uploadFileToDrive(file, );
 
     // 🔹 Save metadata to Firestore under dynamic subject collection
 await db
@@ -131,7 +142,7 @@ await db
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
-    res.status(200).send({ message: "Upload successful", file: uploadedFile });
+    res.status(200).send({ message: "Upload successful", file: uploadedFile, department, });
   } catch (error) {
     console.error(error);
     res.status(500).send(error.message);
