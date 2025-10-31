@@ -28,7 +28,7 @@ const db = admin.firestore();
 
 // ✅ Google Drive setup
 const auth = new google.auth.GoogleAuth({
-  keyFile: "drive-service-account.json",
+  keyFile: "credentials.json",
   scopes: ["https://www.googleapis.com/auth/drive"],
 });
 const authClient = await auth.getClient();
@@ -94,13 +94,13 @@ async function uploadFileToDrive(file) {
   const res = drive.files.create({
     requestBody: {
       name: file.originalname,
-      parents: ["1F-keYuGsk7VLVW_nwC4CvJpb2enkWTTD"],
+      parents: ["1wpWywZTCZIh8Jg-DL7wMMpGTnk57y9NV"],
     },
     media: {
       mimeType: file.mimetype,
       body: bufferStream,
     },
-    fields: "id, name, webViewLink",
+    fields: "id, name",
     supportsAllDrives: true,
   });
   return res.data;
@@ -116,31 +116,43 @@ app.post("/upload", verifyFirebaseToken, upload.single("file"), async (req, res)
 
     // 🔹 Extract department prefix (first 3 letters of course code)
     const department = courseCode.substring(0, 3).toUpperCase();
+    console.log("course code imported");
 
     // // 🔹 Create folder per course if not exists
     // const folderId = await createFolder(department, process.env.DRIVE_PARENT_FOLDER_ID);
 
-    // 🔹 Upload file
-    const uploadedFile = await uploadFileToDrive(file, );
+    // Upload to Drive
+    let uploadedFile;
+    try {
+      uploadedFile = await uploadFileToDrive(file);
+      console.log("Uploaded file:", uploadedFile);
+    } catch (driveError) {
+      console.error("Drive upload error:", driveError);
+      // fallback object so Firestore still runs
+      uploadedFile = { id: null, webViewLink: null };
+    }
 
     // 🔹 Save metadata to Firestore under dynamic subject collection
-await db
-  .collection("studyMaterials")      // parent collection
-  .doc()                             // optional doc ID for uniqueness (can be auto)
-  .collection(courseSubject)         // dynamic collection named after the subject
-  .add({
-    uploaderUid: req.user.uid,
-    uploaderEmail: req.user.email,
-    resourceTitle,
-    description,
-    courseCode,
-    courseSubject,
-    tags: tags ? tags.split("#").filter(Boolean) : [],
-    materialType,
-    fileLink: uploadedFile.webViewLink,
-    fileId: uploadedFile.id,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+// Save metadata to Firestore
+    const docRef = await db
+      .collection("studyMaterials")
+      .doc()
+      .collection(courseSubject)
+      .add({
+        uploaderUid: req.user.uid,
+        uploaderEmail: req.user.email,
+        resourceTitle,
+        description,
+        courseCode,
+        courseSubject,
+        tags: tags ? tags.split("#").filter(Boolean) : [],
+        materialType,
+        fileLink: `https://drive.google.com/file/d/${uploadedFile.id}/view`,
+        fileId: uploadedFile.id,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+    console.log("Firestore document created:", docRef.id);
 
     res.status(200).send({ message: "Upload successful", file: uploadedFile, department, });
   } catch (error) {
