@@ -2,8 +2,8 @@
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/YourUsername/your-project-name.git](https://github.com/YourUsername/your-project-name.git)
-    cd your-project-name
+    git clone [(https://github.com/Dum1du/StudyMate-Backend.git](https://github.com/Dum1du/StudyMate-Backend.git)
+    cd StudyMate-Backend
     ```
 
 2.  **Install dependencies:**
