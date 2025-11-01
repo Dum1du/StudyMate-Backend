@@ -1,14 +1,15 @@
 import dotenv from "dotenv";
 import express from "express";
 import multer from "multer";
+import axios from "axios";
 import { fileURLToPath } from 'url';
+import { dirname, join } from "path";
 import cors from "cors";
 import admin from "firebase-admin";
 import { google } from "googleapis";
-import {dirname, join} from "path";
 import { Readable } from "stream";
-import fs from "fs";
-
+import http from "http";
+import { Server } from "socket.io";
 
 dotenv.config();
 
@@ -16,14 +17,22 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*" }
+});
+
+io.on("connection", (socket) => {
+  console.log("✅ Client connected:", socket.id);
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// 4. Initialize Firebase using the absolute path
+// ✅ Initialize Firebase
 admin.initializeApp({
-    credential: admin.credential.cert(join(__dirname, '..', process.env.FIREBASE_SERVICE_ACCOUNT_PATH)),
+  credential: admin.credential.cert(join(__dirname, "..", process.env.FIREBASE_SERVICE_ACCOUNT_PATH)),
 });
-
 const db = admin.firestore();
 
 // ✅ Google Drive setup
@@ -32,9 +41,9 @@ const auth = new google.auth.GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/drive"],
 });
 const authClient = await auth.getClient();
-const drive = google.drive({version: "v3", auth:authClient});
+const drive = google.drive({ version: "v3", auth: authClient });
 
-// ✅ Multer setup for file upload
+// ✅ Multer setup
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -69,75 +78,73 @@ async function verifyFirebaseToken(req, res, next) {
   }
 }
 
-// // ✅ Function: Create folder dynamically
-// async function createFolder(folderName, parentFolderId) {
-//   const fileMetadata = {
-//     name: folderName,
-//     mimeType: "application/vnd.google-apps.folder",
-//     parents: [parentFolderId],
-//   };
-//   const res = await drive.files.create({
-//     resource: fileMetadata,
-//     fields: "id, name",
-
-//     supportsAllDrives:true,
-//   });
-//   return res.data.id;
-// }
-
-// ✅ Function: Upload file to Google Drive
+// ✅ Upload file to Google Drive
 async function uploadFileToDrive(file) {
-    const bufferStream = new Readable();
-  bufferStream.push(file.buffer);
-  bufferStream.push(null); // End the stream
+  const tokenResponse = await authClient.getAccessToken();
+  const accessToken = tokenResponse.token;
 
-  const res = drive.files.create({
-    requestBody: {
-      name: file.originalname,
-      parents: ["1wpWywZTCZIh8Jg-DL7wMMpGTnk57y9NV"],
-    },
-    media: {
-      mimeType: file.mimetype,
-      body: bufferStream,
-    },
-    fields: "id, name",
-    supportsAllDrives: true,
-  });
-  return res.data;
+  const metadata = {
+    name: file.originalname,
+    parents: ["1wpWywZTCZIh8Jg-DL7wMMpGTnk57y9NV"], // your Drive folder ID
+  };
+
+  const boundary = "boundary123";
+  const preamble = Buffer.from(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${file.mimetype}\r\n\r\n`
+  );
+  const postamble = Buffer.from(`\r\n--${boundary}--`);
+  const fullStream = Readable.from([preamble, file.buffer, postamble]);
+
+  const response = await axios.post(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink",
+    fullStream,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": `multipart/related; boundary=${boundary}`,
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+    }
+  );
+
+  return response.data;
 }
 
 // ✅ Upload endpoint
 app.post("/upload", verifyFirebaseToken, upload.single("file"), async (req, res) => {
   try {
-    const { resourceTitle, description, courseCode, courseSubject, tags, materialType } = req.body;
     const { file } = req;
-
     if (!file) return res.status(400).send("No file uploaded");
+    
 
-    // 🔹 Extract department prefix (first 3 letters of course code)
-    const department = courseCode.substring(0, 3).toUpperCase();
-    console.log("course code imported");
+    // Collect additional fields from req.body
+    const { resourceTitle, description, courseCode, courseSubject, tags, materialType } = req.body;
+    if (!courseSubject) return res.status(400).send("Missing courseSubject");
 
-    // // 🔹 Create folder per course if not exists
-    // const folderId = await createFolder(department, process.env.DRIVE_PARENT_FOLDER_ID);
+    console.log("File received:", file.originalname);
 
-    // Upload to Drive
-    let uploadedFile;
-    try {
-      uploadedFile = await uploadFileToDrive(file);
-      console.log("Uploaded file:", uploadedFile);
-    } catch (driveError) {
-      console.error("Drive upload error:", driveError);
-      // fallback object so Firestore still runs
-      uploadedFile = { id: null, webViewLink: null };
-    }
+    const socketId = req.headers["x-socket-id"];
+    const socket = io.sockets.sockets.get(socketId);
 
-    // 🔹 Save metadata to Firestore under dynamic subject collection
-// Save metadata to Firestore
-    const docRef = await db
-      .collection("studyMaterials")
-      .doc()
-      .collection(courseSubject)
+    if (socket) socket.emit("uploadStatus", { step: "received", message: "File received at backend", fileName: file.originalname });
+
+    // Upload file to Drive
+    const uploadedFile = await uploadFileToDrive(file);
+
+    if (socket) socket.emit("uploadStatus", { step: "drive", message: "File uploaded to Drive", fileName: file.originalname });
+
+    console.log("File uploaded:", file.originalname);
+
+
+    const departmentId = courseCode.substring(0, 3).toUpperCase();
+
+    // Reference to department document
+const deptDocRef = db.collection("studyMaterials").doc(departmentId);
+
+    // Save metadata to Firestore
+    const materialRef = await deptDocRef
+      .collection("Materials")
       .add({
         uploaderUid: req.user.uid,
         uploaderEmail: req.user.email,
@@ -147,20 +154,29 @@ app.post("/upload", verifyFirebaseToken, upload.single("file"), async (req, res)
         courseSubject,
         tags: tags ? tags.split("#").filter(Boolean) : [],
         materialType,
-        fileLink: `https://drive.google.com/file/d/${uploadedFile.id}/view`,
-        fileId: uploadedFile.id,
+        fileLink: uploadedFile?.id ? `https://drive.google.com/file/d/${uploadedFile.id}/view` : null,
+        fileId: uploadedFile?.id || null,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-    console.log("Firestore document created:", docRef.id);
+      console.log("File added to firebase:", file.originalname);
+      console.log("File: ", file.originalname);
+      if (socket) socket.emit("uploadStatus", { step: "firestore", message: "Metadata saved to Firestore", docId: materialRef.id });
 
-    res.status(200).send({ message: "Upload successful", file: uploadedFile, department, });
+    // 3️⃣ All done
+      if (socket) socket.emit("uploadStatus", { step: "complete", message: "Upload process complete", fileName: file.originalname, docId: materialRef.id });
+
+
+    res.status(200).send({
+      message: "✅ Upload successful",
+      file: uploadedFile,
+      docId: materialRef.id,
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).send(error.message);
+    console.error("Upload failed:", error);
+    res.status(500).send({ message: error.message });
   }
 });
 
-app.listen(process.env.PORT, () =>
-  console.log(`🚀 Server running on port ${process.env.PORT}`)
-);
+const PORT = process.env.PORT || 4000;
+server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
