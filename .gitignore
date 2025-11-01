@@ -21,7 +21,7 @@ exported-data/
 # Since Service Account keys are often used for Drive access, the *.json rule 
 # above typically covers it, but we can add more specific names.
 firebase-service-account.json
-drive-service-account.json
+credentials.json
 
 # -----------------------------------------------------------------------------
 # ENVIRONMENT / SECRETS (containing the project and folder IDs)
