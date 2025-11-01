@@ -2,7 +2,7 @@
 
 1.  **Clone the repository:**
     ```bash
-    git clone [(https://github.com/Dum1du/StudyMate-Backend.git](https://github.com/Dum1du/StudyMate-Backend.git)
+    git clone [https://github.com/Dum1du/StudyMate-Backend.git](https://github.com/Dum1du/StudyMate-Backend.git)
     cd StudyMate-Backend
     ```
 
