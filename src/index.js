@@ -23,19 +23,19 @@ const io = new Server(server, {
 });
 
 io.on("connection", (socket) => {
-  console.log("✅ Client connected:", socket.id);
+  console.log("Client connected:", socket.id);
 });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// ✅ Initialize Firebase
+// Initialize Firebase
 admin.initializeApp({
   credential: admin.credential.cert(join(__dirname, "..", process.env.FIREBASE_SERVICE_ACCOUNT_PATH)),
 });
 const db = admin.firestore();
 
-// ✅ Google Drive setup
+// Google Drive integration
 const auth = new google.auth.GoogleAuth({
   keyFile: "credentials.json",
   scopes: ["https://www.googleapis.com/auth/drive"],
@@ -43,7 +43,7 @@ const auth = new google.auth.GoogleAuth({
 const authClient = await auth.getClient();
 const drive = google.drive({ version: "v3", auth: authClient });
 
-// ✅ Multer setup
+//Multer setup
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -62,7 +62,7 @@ const upload = multer({
   },
 });
 
-// ✅ Middleware: Verify Firebase User
+//Verify Firebase User 
 async function verifyFirebaseToken(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -78,14 +78,14 @@ async function verifyFirebaseToken(req, res, next) {
   }
 }
 
-// ✅ Upload file to Google Drive
+//Upload file to Google Drive
 async function uploadFileToDrive(file) {
   const tokenResponse = await authClient.getAccessToken();
   const accessToken = tokenResponse.token;
 
   const metadata = {
     name: file.originalname,
-    parents: ["1wpWywZTCZIh8Jg-DL7wMMpGTnk57y9NV"], // your Drive folder ID
+    parents: ["1wpWywZTCZIh8Jg-DL7wMMpGTnk57y9NV"], //Drive folder ID
   };
 
   const boundary = "boundary123";
@@ -111,14 +111,14 @@ async function uploadFileToDrive(file) {
   return response.data;
 }
 
-// ✅ Upload endpoint
+// Upload endpoint
 app.post("/upload", verifyFirebaseToken, upload.single("file"), async (req, res) => {
   try {
     const { file } = req;
     if (!file) return res.status(400).send("No file uploaded");
     
 
-    // Collect additional fields from req.body
+    // Collect additional fields from
     const { resourceTitle, description, courseCode, courseSubject, tags, materialType } = req.body;
     if (!courseSubject) return res.status(400).send("Missing courseSubject");
 
@@ -163,7 +163,7 @@ const deptDocRef = db.collection("studyMaterials").doc(departmentId);
       console.log("File: ", file.originalname);
       if (socket) socket.emit("uploadStatus", { step: "firestore", message: "Metadata saved to Firestore", docId: materialRef.id });
 
-    // 3️⃣ All done
+    //All done
       if (socket) socket.emit("uploadStatus", { step: "complete", message: "Upload process complete", fileName: file.originalname, docId: materialRef.id });
 
 
@@ -179,4 +179,4 @@ const deptDocRef = db.collection("studyMaterials").doc(departmentId);
 });
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
