@@ -168,7 +168,7 @@ const deptDocRef = db.collection("studyMaterials").doc(departmentId);
 
 
     res.status(200).send({
-      message: "✅ Upload successful",
+      message: " Upload successful",
       file: uploadedFile,
       docId: materialRef.id,
     });
