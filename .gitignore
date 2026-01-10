@@ -1,0 +1,54 @@
+# -----------------------------------------------------------------------------
+# FIREBASE / GOOGLE CLOUD
+# -----------------------------------------------------------------------------
+# Exclude the firebase-debug.log file created by the Firebase CLI
+firebase-debug.log
+
+# Exclude all Service Account key files (JSON/P12 credentials)
+# These files should NEVER be committed to Git.
+*.p12
+
+# Exclude any specific Firebase files or directories that may be generated
+# For example, if you are using 'firebase emulators:export'
+exported-data/
+.firebase/
+
+# -----------------------------------------------------------------------------
+# GOOGLE DRIVE / MISC. CREDENTIALS
+# -----------------------------------------------------------------------------
+# The folder ID itself is a configuration value and doesn't need to be ignored,
+# but the credentials file used to access it must be ignored.
+# Since Service Account keys are often used for Drive access, the *.json rule 
+# above typically covers it, but we can add more specific names.
+firebase-service-account.json
+credentials.json
+
+# -----------------------------------------------------------------------------
+# ENVIRONMENT / SECRETS (containing the project and folder IDs)
+# -----------------------------------------------------------------------------
+# Exclude the environment file(s) where you store your secrets and IDs.
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# -----------------------------------------------------------------------------
+# NODE.JS (General exclusions for Node projects)
+# -----------------------------------------------------------------------------
+# dependencies
+/node_modules
+/jspm_packages
+
+# testing
+/coverage
+
+# production build artifacts
+/dist
+/build
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
