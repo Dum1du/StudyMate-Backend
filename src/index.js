@@ -108,7 +108,18 @@ async function uploadFileToDrive(file) {
     }
   );
 
-  return response.data;
+  const uploadedFile = response.data;
+
+  // 🆕 Add this: Make the file publicly accessible (no login required)
+  await drive.permissions.create({
+    fileId: uploadedFile.id,
+    requestBody: {
+      role: 'reader',
+      type: 'anyone',
+    },
+  });
+
+  return uploadedFile;
 }
 
 // ✅ Upload endpoint
