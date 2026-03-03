@@ -13,6 +13,7 @@ import { Server } from "socket.io";
 import { spawn } from "child_process";
 import fs from "fs";
 import { PDFParse } from "pdf-parse";
+import {processPdfAndGenerateQuiz}  from "./processPdfAndGenerateQuiz.js";
 
 dotenv.config();
 
@@ -120,38 +121,6 @@ app.post("/upload", verifyFirebaseToken, upload.single("file"), async (req, res)
     const { file } = req;
     if (!file) return res.status(400).send("No file uploaded");
 
-    const pdfPath = file.path;
-
-    //extract text from PDF
-    const dataBuffer = fs.readFileSync(pdfPath);
-    const pdfData = await PDFParse(dataBuffer);
-    const text = pdfData.text;
-
-    // Split into sentences
-        const sentences = text.match(/[^.!?]+[.!?]+/g) || [];
-
-    // Call python ML
-    const pythonProcess = spawn('python', [
-      path.join(__dirname, 'ML', 'classify_sentences.py'),
-      JSON.stringify(sentences)
-    ]);
-
-    let selectedSentences = [];
-    pythonProcess.stdout.on('data', (data) => {
-      selectedSentences = JSON.parse(data.toString());
-    })
-
-    pythonProcess.on('close', (code) => {
-            // Clean up
-            fs.unlinkSync(pdfPath);
-            
-            res.json({
-                message: 'Quiz sentences selected',
-                sentences: selectedSentences
-            });
-        });
-    
-
     // Collect additional fields from
     const { resourceTitle, description, courseCode, courseSubject, tags, materialType } = req.body;
     if (!courseSubject) return res.status(400).send("Missing courseSubject");
@@ -174,7 +143,7 @@ app.post("/upload", verifyFirebaseToken, upload.single("file"), async (req, res)
     const departmentId = courseCode.substring(0, 3).toUpperCase();
 
     // Reference to department document
-const deptDocRef = db.collection("studyMaterials").doc(departmentId);
+    const deptDocRef = db.collection("studyMaterials").doc(departmentId);
 
     // Save metadata to Firestore
     const materialRef = await deptDocRef
@@ -190,6 +159,7 @@ const deptDocRef = db.collection("studyMaterials").doc(departmentId);
         materialType,
         fileLink: uploadedFile?.id ? `https://drive.google.com/file/d/${uploadedFile.id}/view` : null,
         fileId: uploadedFile?.id || null,
+        quizStatus: "processing",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -197,15 +167,19 @@ const deptDocRef = db.collection("studyMaterials").doc(departmentId);
       console.log("File: ", file.originalname);
       if (socket) socket.emit("uploadStatus", { step: "firestore", message: "Metadata saved to Firestore", docId: materialRef.id });
 
-    //All done
-      if (socket) socket.emit("uploadStatus", { step: "complete", message: "Upload process complete", fileName: file.originalname, docId: materialRef.id });
-
-
-    res.status(200).send({
-      message: " Upload successful",
+      res.status(200).send({
+      message: " Upload successful. Quiz generation in started.",
       file: uploadedFile,
       docId: materialRef.id,
     });
+
+    // 4️⃣ Background processing (NO AWAIT)
+    processPdfAndGenerateQuiz(file.path, departmentId, materialRef.id, db);
+
+    //All done
+      if (socket) socket.emit("uploadStatus", { step: "complete", message: "Upload process complete", fileName: file.originalname, docId: materialRef.id });
+
+    
   } catch (error) {
     console.error("Upload failed:", error);
     res.status(500).send({ message: error.message });
