@@ -1,6 +1,7 @@
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import {QuizeGenerator} from "./QuizeGenerator.js";
 
-export async function processPdfAndGenerateQuiz(pdfPath, departmentId, documentId, db) {
+export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documentId, db) {
   try {
     const materialRef = db
       .collection("studyMaterials")
@@ -11,13 +12,19 @@ export async function processPdfAndGenerateQuiz(pdfPath, departmentId, documentI
     const quizCollectionRef = materialRef.collection("Quizes");
 
     // Read PDF
-    const dataBuffer = await fs.promises.readFile(pdfPath);
-    const pdfData = await PDFParse(dataBuffer);
+    const uint8Array = new Uint8Array(pdfBuffer);
+    const loadingTask = pdfjsLib.getDocument({ data: uint8Array });
+    const pdf = await loadingTask.promise;
 
     // Split pages, limit for safety
-    const pages = pdfData.text.split("\f").slice(0, 15);
+    const maxPages = Math.min(pdf.numPages, 15);
 
-    for (const pageText of pages) {
+    for (let i = 1; i <= maxPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+
+      const pageText = content.items.map(item => item.str).join(" ");
+
       const questions = await QuizeGenerator(pageText);
       if (!Array.isArray(questions)) continue;
 

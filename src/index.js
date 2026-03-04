@@ -174,7 +174,7 @@ app.post("/upload", verifyFirebaseToken, upload.single("file"), async (req, res)
     });
 
     // 4️⃣ Background processing (NO AWAIT)
-    processPdfAndGenerateQuiz(file.path, departmentId, materialRef.id, db);
+    processPdfAndGenerateQuiz(file.buffer, departmentId, materialRef.id, db);
 
     //All done
       if (socket) socket.emit("uploadStatus", { step: "complete", message: "Upload process complete", fileName: file.originalname, docId: materialRef.id });
