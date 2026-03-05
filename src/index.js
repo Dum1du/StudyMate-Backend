@@ -2,18 +2,13 @@ import dotenv from "dotenv";
 import express from "express";
 import multer from "multer";
 import axios from "axios";
-import { fileURLToPath } from 'url';
-import { dirname, join } from "path";
 import cors from "cors";
-import admin from "firebase-admin";
 import { google } from "googleapis";
 import { Readable } from "stream";
 import http from "http";
 import { Server } from "socket.io";
-import { spawn } from "child_process";
-import fs from "fs";
-import { PDFParse } from "pdf-parse";
 import {processPdfAndGenerateQuiz}  from "./processPdfAndGenerateQuiz.js";
+import {admin, db } from "./firebaseConfig.js";
 
 dotenv.config();
 
@@ -29,15 +24,6 @@ const io = new Server(server, {
 io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
 });
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Initialize Firebase
-admin.initializeApp({
-  credential: admin.credential.cert(join(__dirname, "..", process.env.FIREBASE_SERVICE_ACCOUNT_PATH)),
-});
-const db = admin.firestore();
 
 // Google Drive integration
 const auth = new google.auth.GoogleAuth({

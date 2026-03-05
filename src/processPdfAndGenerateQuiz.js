@@ -1,6 +1,7 @@
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import fs from "fs";
 import {QuizeGenerator} from "./QuizeGenerator.js";
+import { admin, db } from "./firebaseConfig.js";
 
 
 // Helper: split text into word chunks with optional overlap
@@ -20,7 +21,7 @@ function splitTextIntoChunks(text, chunkSize = 400, overlap = 50) {
 }
 
 
-export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documentId, db) {
+export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documentId) {
   try {
     const materialRef = db
       .collection("studyMaterials")
@@ -46,29 +47,30 @@ export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documen
 
       fullText += " " + content.items.map(item => item.str).join(" ");
 
-      // const questions = await QuizeGenerator(pageText);
-
-      // if (!Array.isArray(questions)) continue;
-
-      // // Batch write for performance
-      // const batch = db.batch();
-      // for (const q of questions) {
-      //   const newDocRef = quizCollectionRef.doc();
-      //   batch.set(newDocRef, {
-      //     question: q.question,
-      //     options: q.options,
-      //     answer: q.answer,
-      //     createdAt: admin.firestore.FieldValue.serverTimestamp()
-      //   });
-      // }
-      // await batch.commit();
     }
     const chunks = splitTextIntoChunks(fullText, 400, 50);
-      chunks.forEach((chunk, index) => {
-      fs.appendFileSync(`extracted.txt`,`\n--- CHUNK ${index + 1} ---\n${chunk}\n`); // For debugging
-      });
 
-     return; // Remove this line to enable quiz generation
+    for (const chunk of chunks) {
+
+        const questions = await QuizeGenerator(chunk);
+
+      if (!Array.isArray(questions)) continue;
+
+      // Batch write for performance
+      const batch = db.batch();
+      for (const q of questions) {
+        const newDocRef = quizCollectionRef.doc();
+        batch.set(newDocRef, {
+          question: q.question,
+          options: q.options,
+          answer: q.answer,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+      await batch.commit();
+
+      // fs.appendFileSync(`extracted.txt`,`\n--- CHUNK ${index + 1} ---\n${chunk}\n`); // For debugging
+      }      
 
     // Update final status to ready
     await materialRef.update({
