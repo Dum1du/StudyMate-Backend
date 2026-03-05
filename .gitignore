@@ -42,7 +42,14 @@ credentials.json
 
 # testing
 /coverage
+.pdf
 
 # production build artifacts
 /dist
 /build
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc

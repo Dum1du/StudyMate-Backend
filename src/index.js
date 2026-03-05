@@ -2,14 +2,13 @@ import dotenv from "dotenv";
 import express from "express";
 import multer from "multer";
 import axios from "axios";
-import { fileURLToPath } from 'url';
-import { dirname, join } from "path";
 import cors from "cors";
-import admin from "firebase-admin";
 import { google } from "googleapis";
 import { Readable } from "stream";
 import http from "http";
 import { Server } from "socket.io";
+import {processPdfAndGenerateQuiz}  from "./processPdfAndGenerateQuiz.js";
+import {admin, db } from "./firebaseConfig.js";
 
 dotenv.config();
 
@@ -25,15 +24,6 @@ const io = new Server(server, {
 io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
 });
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Initialize Firebase
-admin.initializeApp({
-  credential: admin.credential.cert(join(__dirname, "..", process.env.FIREBASE_SERVICE_ACCOUNT_PATH)),
-});
-const db = admin.firestore();
 
 // Google Drive integration
 const auth = new google.auth.GoogleAuth({
@@ -108,18 +98,7 @@ async function uploadFileToDrive(file) {
     }
   );
 
-  const uploadedFile = response.data;
-
-  // 🆕 Add this: Make the file publicly accessible (no login required)
-  await drive.permissions.create({
-    fileId: uploadedFile.id,
-    requestBody: {
-      role: 'reader',
-      type: 'anyone',
-    },
-  });
-
-  return uploadedFile;
+  return response.data;
 }
 
 // Upload endpoint
@@ -127,7 +106,6 @@ app.post("/upload", verifyFirebaseToken, upload.single("file"), async (req, res)
   try {
     const { file } = req;
     if (!file) return res.status(400).send("No file uploaded");
-    
 
     // Collect additional fields from
     const { resourceTitle, description, courseCode, courseSubject, tags, materialType } = req.body;
@@ -151,7 +129,7 @@ app.post("/upload", verifyFirebaseToken, upload.single("file"), async (req, res)
     const departmentId = courseCode.substring(0, 3).toUpperCase();
 
     // Reference to department document
-const deptDocRef = db.collection("studyMaterials").doc(departmentId);
+    const deptDocRef = db.collection("studyMaterials").doc(departmentId);
 
     // Save metadata to Firestore
     const materialRef = await deptDocRef
@@ -167,6 +145,7 @@ const deptDocRef = db.collection("studyMaterials").doc(departmentId);
         materialType,
         fileLink: uploadedFile?.id ? `https://drive.google.com/file/d/${uploadedFile.id}/view` : null,
         fileId: uploadedFile?.id || null,
+        quizStatus: "processing",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -174,15 +153,19 @@ const deptDocRef = db.collection("studyMaterials").doc(departmentId);
       console.log("File: ", file.originalname);
       if (socket) socket.emit("uploadStatus", { step: "firestore", message: "Metadata saved to Firestore", docId: materialRef.id });
 
-    //All done
-      if (socket) socket.emit("uploadStatus", { step: "complete", message: "Upload process complete", fileName: file.originalname, docId: materialRef.id });
-
-
-    res.status(200).send({
-      message: " Upload successful",
+      res.status(200).send({
+      message: " Upload successful. Quiz generation in started.",
       file: uploadedFile,
       docId: materialRef.id,
     });
+
+    // 4️⃣ Background processing (NO AWAIT)
+    processPdfAndGenerateQuiz(file.buffer, departmentId, materialRef.id, db);
+
+    //All done
+      if (socket) socket.emit("uploadStatus", { step: "complete", message: "Upload process complete", fileName: file.originalname, docId: materialRef.id });
+
+    
   } catch (error) {
     console.error("Upload failed:", error);
     res.status(500).send({ message: error.message });
