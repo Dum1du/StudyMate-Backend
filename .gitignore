@@ -42,6 +42,7 @@ credentials.json
 
 # testing
 /coverage
+.pdf
 
 # production build artifacts
 /dist
