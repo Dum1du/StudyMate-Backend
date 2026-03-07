@@ -10,7 +10,7 @@ const auth = new google.auth.GoogleAuth({
 const authClient = await auth.getClient();
 
 //Upload file to Google Drive
-export async function uploadFileToDrive(file) {
+const uploadFileToDrive = async (file) => {
   const tokenResponse = await authClient.getAccessToken();
   const accessToken = tokenResponse.token;
 
@@ -41,3 +41,25 @@ export async function uploadFileToDrive(file) {
 
   return response.data;
 }
+
+//Delete file from Google Drive
+const deleteFileFromDrive = async (fileId) => {
+  if (!fileId) return;
+
+  try {
+    const tokenResponse = await authClient.getAccessToken();
+    const accessToken = tokenResponse.token;
+
+    await axios.delete(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    console.log(`Deleted Drive file: ${fileId}`);
+  } catch (err) {
+    console.log("Drive file might already be deleted:", err.message);
+  }
+}
+
+export { uploadFileToDrive, deleteFileFromDrive };

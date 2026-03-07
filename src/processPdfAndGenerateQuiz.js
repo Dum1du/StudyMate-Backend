@@ -31,12 +31,25 @@ export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documen
 
     const quizCollectionRef = materialRef.collection("Quizes");
 
+    // 🔹 FILE SIZE CHECK
+    const MAX_PDF_SIZE = 5 * 1024 * 1024; // 5MB
+    if (pdfBuffer.length > MAX_PDF_SIZE) {
+      console.log("PDF too large. Skipping quiz generation.");
+
+      await materialRef.update({
+        quizStatus: "file_too_large"
+      });
+
+      return;
+    }
+
     // Read PDF
     const uint8Array = new Uint8Array(pdfBuffer);
     const loadingTask = pdfjsLib.getDocument({ data: uint8Array });
     const pdf = await loadingTask.promise;
 
     let fullText = "";
+    let emptyPages = 0; // Counter for pages without text layer
 
     // Split pages, limit for safety
     const maxPages = Math.min(pdf.numPages, 15);
@@ -45,9 +58,26 @@ export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documen
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
 
+      // detect pages with no text layer
+      if (content.items.length === 0) {
+        emptyPages++;
+      }
+
+      // If first 3 pages contain no text → likely scanned PDF
+      if (i <= 3 && emptyPages === i) {
+        console.log("Scanned/image PDF detected. Skipping quiz generation.");
+
+        await materialRef.update({
+          quizStatus: "no_text_pdf"
+        });
+
+        return;
+      }
+
       fullText += " " + content.items.map(item => item.str).join(" ");
 
     }
+
     const chunks = splitTextIntoChunks(fullText, 400, 50);
 
     for (const chunk of chunks) {

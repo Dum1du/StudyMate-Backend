@@ -68,13 +68,20 @@ export async function uploadFile(req, res) {
       docId: materialRef.id,
     });
 
-    // background job
-    processPdfAndGenerateQuiz(
-      file.buffer,
-      departmentId,
-      materialRef.id,
-      db
-    );
+    console.log(`file type ${materialType} uploaded. Starting quiz generation if applicable.`);
+
+    if(materialType === "study_material") {
+      // background job
+    await processPdfAndGenerateQuiz(
+        file.buffer,
+       departmentId,
+       materialRef.id,
+        db
+      );
+    }else{
+      console.log(`${materialType} uploaded. Skipping quiz generation.`);
+    }
+    
 
     if (socket) 
       socket.emit("uploadStatus", { 
