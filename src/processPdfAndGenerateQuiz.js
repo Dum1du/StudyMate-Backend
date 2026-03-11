@@ -1,8 +1,7 @@
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import fs from "fs";
-import {QuizeGenerator} from "./QuizeGenerator.js";
+import { QuizeGenerator } from "./QuizeGenerator.js";
 import { admin, db } from "./firebaseConfig.js";
-
 
 // Helper: split text into word chunks with optional overlap
 function splitTextIntoChunks(text, chunkSize = 400, overlap = 50) {
@@ -19,7 +18,6 @@ function splitTextIntoChunks(text, chunkSize = 400, overlap = 50) {
 
   return chunks;
 }
-
 
 export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documentId) {
   try {
@@ -75,14 +73,12 @@ export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documen
       }
 
       fullText += " " + content.items.map(item => item.str).join(" ");
-
     }
 
     const chunks = splitTextIntoChunks(fullText, 400, 50);
 
     for (const chunk of chunks) {
-
-        const questions = await QuizeGenerator(chunk);
+      const questions = await QuizeGenerator(chunk);
 
       if (!Array.isArray(questions)) continue;
 
@@ -98,14 +94,54 @@ export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documen
         });
       }
       await batch.commit();
-
-      // fs.appendFileSync(`extracted.txt`,`\n--- CHUNK ${index + 1} ---\n${chunk}\n`); // For debugging
-      }      
+    }      
 
     // Update final status to ready
     await materialRef.update({
       quizStatus: "ready"
     });
+
+    // ==========================================
+    // --- NEW: SEND NOTIFICATION TO UPLOADER ---
+    // ==========================================
+    const materialSnap = await materialRef.get();
+    if (materialSnap.exists) {
+      const materialData = materialSnap.data();
+      const uploaderUid = materialData.uploaderUid;
+      const resourceTitle = materialData.resourceTitle || "your uploaded material";
+
+      // Only send if we know who uploaded it
+      if (uploaderUid) {
+        const notifBatch = db.batch();
+        const mainNotifRef = db.collection("notifications").doc();
+
+        const message = `🧠 Smart Quiz is ready! Test your knowledge on "${resourceTitle}".`;
+        const timestamp = admin.firestore.FieldValue.serverTimestamp();
+
+        // 1. Create main notification doc
+        notifBatch.set(mainNotifRef, {
+          title: "Quiz Ready",
+          message: message,
+          createdAt: timestamp,
+          type: "quiz",
+          targetId: documentId
+        });
+
+        // 2. Deliver to the user's specific inbox
+        const userNotifRef = mainNotifRef.collection("userNotifications").doc(uploaderUid);
+        notifBatch.set(userNotifRef, {
+          userId: uploaderUid,
+          message: message,
+          read: false,
+          createdAt: timestamp,
+          type: "quiz",
+          targetId: documentId
+        });
+
+        await notifBatch.commit();
+        console.log(`Notification sent to ${uploaderUid} for quiz readiness.`);
+      }
+    }
 
   } catch (err) {
     console.error("Quiz generation error:", err);
