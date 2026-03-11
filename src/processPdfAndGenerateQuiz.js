@@ -1,4 +1,4 @@
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.js";
 import fs from "fs";
 import { QuizeGenerator } from "./QuizeGenerator.js";
 import { admin, db } from "./firebaseConfig.js";
@@ -19,7 +19,11 @@ function splitTextIntoChunks(text, chunkSize = 400, overlap = 50) {
   return chunks;
 }
 
-export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documentId) {
+export async function processPdfAndGenerateQuiz(
+  pdfBuffer,
+  departmentId,
+  documentId,
+) {
   try {
     const materialRef = db
       .collection("studyMaterials")
@@ -35,7 +39,7 @@ export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documen
       console.log("PDF too large. Skipping quiz generation.");
 
       await materialRef.update({
-        quizStatus: "file_too_large"
+        quizStatus: "file_too_large",
       });
 
       return;
@@ -66,13 +70,13 @@ export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documen
         console.log("Scanned/image PDF detected. Skipping quiz generation.");
 
         await materialRef.update({
-          quizStatus: "no_text_pdf"
+          quizStatus: "no_text_pdf",
         });
 
         return;
       }
 
-      fullText += " " + content.items.map(item => item.str).join(" ");
+      fullText += " " + content.items.map((item) => item.str).join(" ");
     }
 
     const chunks = splitTextIntoChunks(fullText, 400, 50);
@@ -90,15 +94,15 @@ export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documen
           question: q.question,
           options: q.options,
           answer: q.answer,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       }
       await batch.commit();
-    }      
+    }
 
     // Update final status to ready
     await materialRef.update({
-      quizStatus: "ready"
+      quizStatus: "ready",
     });
 
     // ==========================================
@@ -108,7 +112,8 @@ export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documen
     if (materialSnap.exists) {
       const materialData = materialSnap.data();
       const uploaderUid = materialData.uploaderUid;
-      const resourceTitle = materialData.resourceTitle || "your uploaded material";
+      const resourceTitle =
+        materialData.resourceTitle || "your uploaded material";
 
       // Only send if we know who uploaded it
       if (uploaderUid) {
@@ -124,25 +129,26 @@ export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documen
           message: message,
           createdAt: timestamp,
           type: "quiz",
-          targetId: documentId
+          targetId: documentId,
         });
 
         // 2. Deliver to the user's specific inbox
-        const userNotifRef = mainNotifRef.collection("userNotifications").doc(uploaderUid);
+        const userNotifRef = mainNotifRef
+          .collection("userNotifications")
+          .doc(uploaderUid);
         notifBatch.set(userNotifRef, {
           userId: uploaderUid,
           message: message,
           read: false,
           createdAt: timestamp,
           type: "quiz",
-          targetId: documentId
+          targetId: documentId,
         });
 
         await notifBatch.commit();
         console.log(`Notification sent to ${uploaderUid} for quiz readiness.`);
       }
     }
-
   } catch (err) {
     console.error("Quiz generation error:", err);
     await db
@@ -151,7 +157,7 @@ export async function processPdfAndGenerateQuiz(pdfBuffer, departmentId, documen
       .collection("Materials")
       .doc(documentId)
       .update({
-        quizStatus: "failed"
+        quizStatus: "failed",
       });
   }
 }
