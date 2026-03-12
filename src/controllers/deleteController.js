@@ -15,25 +15,25 @@ export const deleteUpload = async (req, res) => {
       .collection("Materials")
       .doc(docId);
 
-    // 1. Efficiently find the document
+    //find the document
     const docSnap = await docRef.get();
     if (!docSnap.exists) return res.status(404).send("File not found");
 
     const fileData = docSnap.data();
 
-    // --- FIXED: Check if the user is an Admin OR a Teacher in Firestore ---
+    // Check if the user is an Admin OR a Teacher
     const userDoc = await db.collection("users").doc(uid).get();
     const userRole = userDoc.exists ? userDoc.data().role : "student";
     
     // Check if they are authorized to bypass the ownership rule
     const isAuthorized = userRole === "admin" || userRole === "teacher";
 
-    // 2. Verify Ownership OR Authorized Role
+    // Verify Ownership OR Authorized Role
     if (fileData.uploaderUid !== uid && !isAuthorized) {
       return res.status(403).send("You are not authorized to delete this file.");
     }
 
-    // 3. Delete from Google Drive
+    // Delete from Google Drive
     if (fileData.fileId) {
       try {
         await deleteFileFromDrive(fileData.fileId);
@@ -43,7 +43,7 @@ export const deleteUpload = async (req, res) => {
       }
     }
 
-    // 4. Delete from Firestore
+    // Delete from Firestore
     await docRef.delete();
     console.log(`Deleted Firestore doc: ${docId}`);
 
